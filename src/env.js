@@ -1,3 +1,4 @@
+// src/env.js
 import 'dotenv/config';
 
 function req(name, fallback) {
@@ -11,11 +12,10 @@ export const env = {
     nodeEnv: req('NODE_ENV', 'development'),
     corsOrigin: req('CORS_ORIGIN', '*'),
     mongoUri: req('MONGODB_URI'),
-    s3: {
-        region: process.env.S3_REGION,
-        bucket: process.env.S3_BUCKET,
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-        presignExpires: parseInt(process.env.S3_PRESIGN_EXPIRES ?? '300', 10)
+
+    // 👇 S3 설정을 GCS 설정으로 변경
+    gcs: {
+        bucket: req('GCS_BUCKET'), // .env 파일에 GCS 버킷 이름 추가
+        keyFilePath: process.env.GOOGLE_APPLICATION_CREDENTIALS // .env 파일에 키 파일 경로 추가
     }
 };
