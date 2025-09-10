@@ -4,6 +4,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import 'express-async-errors'; // ✨ 추가됨: async error-handling
 
 import memoriesRouter from './routes/memories.js';
 import groupsRouter from './routes/groups.js';
@@ -19,7 +20,7 @@ app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
 
-// 정적 호스팅 (이미지 캐시 강하게)
+// 정적 호스팅
 app.use(
     '/uploads',
     express.static(path.join(__dirname, '../uploads'), {
@@ -31,30 +32,18 @@ app.use(
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
+// 라우터 연결
 app.use('/api/memories', memoriesRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/uploads', uploadsRouter);
 
-// (선택) 라우트 디버그
-// app.get('/__routes', (req, res) => {
-//   const routes = [];
-//   app._router.stack.forEach((m) => {
-//     if (m.name === 'router' && m.handle?.stack) {
-//       m.handle.stack.forEach((h) => {
-//         const r = h.route;
-//         if (r) {
-//           const methods = Object.keys(r.methods).join(',').toUpperCase();
-//           routes.push(`${methods} ${r.path}`);
-//         }
-//       });
-//     }
-//   });
-//   res.json(routes);
-// });
-
-// eslint-disable-next-line no-unused-vars
+// 전역 에러 핸들러 (이제 async 함수 에러도 자동으로 받음)
 app.use((err, _req, res, _next) => {
     console.error(err);
+    // Zod 에러인 경우 좀 더 구체적인 메시지 제공
+    if (err.issues) {
+        return res.status(400).json({ error: 'Invalid input', details: err.issues });
+    }
     res.status(400).json({ error: String(err?.message ?? err) });
 });
 
