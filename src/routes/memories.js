@@ -17,7 +17,8 @@ const createBody = z.object({
     tags: z.array(z.string()).optional().default([]),
     favorite: z.boolean().optional().default(false),
     visibility: z.enum(['private', 'shared']).optional().default('private'),
-    groupId: z.string().optional().nullable()
+    groupId: z.string().optional().nullable(),
+    thumbUrl: z.string().url().nullable().optional(),
 });
 
 const updateBody = z.object({
@@ -60,7 +61,8 @@ router.post('/', async (req, res, next) => {
             tags: d.tags,
             favorite: d.favorite,
             visibility: d.visibility,
-            groupId: d.groupId ?? null
+            groupId: d.groupId ?? null,
+            thumbUrl: d.thumbUrl ?? undefined,
         });
         res.status(201).json(doc);
     } catch (e) { next(e); }
@@ -220,5 +222,6 @@ router.get('/stats/summary', async (req, res, next) => {
         res.json({ total, nearby, thisMonth });
     } catch (e) { next(e); }
 });
+
 
 export default router;
