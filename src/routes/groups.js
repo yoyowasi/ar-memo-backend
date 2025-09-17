@@ -1,21 +1,16 @@
-// src/routes/groups.js
 import { Router } from 'express';
-import * as groupsController from '../controllers/groups.controller.js';
+import { authRequired, asyncHandler } from '../middlewares/auth.js';
+import { GroupsController as C } from '../controllers/groups.controller.js';
 
 const router = Router();
 
-// group
-router.post('/', groupsController.createGroup);
-router.get('/', groupsController.listGroups);
-router.get('/:id', groupsController.getGroupById);
-router.put('/:id', groupsController.updateGroup);
-router.delete('/:id', groupsController.deleteGroup);
-
-// members
-router.post('/:id/members', groupsController.addMember);
-router.delete('/:id/members/:userId', groupsController.removeMember);
-
-// memories
-router.get('/:id/memories', groupsController.listGroupMemories);
+router.post('/', authRequired, asyncHandler(C.create));
+router.get('/', authRequired, asyncHandler(C.listMine));
+router.get('/:id', authRequired, asyncHandler(C.detail));
+router.put('/:id', authRequired, asyncHandler(C.update));
+router.delete('/:id', authRequired, asyncHandler(C.remove));
+router.post('/:id/members', authRequired, asyncHandler(C.addMember));
+router.delete('/:id/members/:userId', authRequired, asyncHandler(C.removeMember));
+router.get('/:id/memories', authRequired, asyncHandler(C.listMemories));
 
 export default router;
