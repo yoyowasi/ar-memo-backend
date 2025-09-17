@@ -1,0 +1,35 @@
+# docker-compose.yml
+
+version: '3.8' # Docker Compose 파일 형식 버전
+
+services:
+  # 1. MongoDB 서비스 설정
+  mongo:
+    image: mongo # 사용할 이미지
+    container_name: ar-memo-mongo-compose # 컨테이너 이름
+    volumes:
+      - mongo-data:/data/db # 데이터를 영구적으로 저장하기 위한 볼륨
+    restart: unless-stopped
+
+  # 2. 백엔드 서비스 설정
+  backend:
+    container_name: ar-memo-backend-compose
+    build: . # 현재 디렉토리의 Dockerfile을 사용해 이미지를 빌드
+    ports:
+      - "4000:4000" # 포트 매핑
+    volumes:
+      # 중요: 내 컴퓨터의 src 폴더를 컨테이너의 /app/src 폴더와 동기화
+      # 이렇게 하면 코드를 저장할 때마다 컨테이너 내부 코드도 바로 변경됨
+      - ./src:/app/src
+    environment:
+      # 필요한 환경 변수들을 여기에 모두 정의
+      - MONGODB_URI=mongodb://mongo:27017/ar-memo
+      - JWT_SECRET=your-super-secret-key-for-dev
+      - PORT=4000
+    command: npm run dev # 컨테이너 실행 시 'node src/server.js' 대신 'nodemon'을 실행
+    depends_on:
+      - mongo # mongo 서비스가 먼저 시작된 후에 backend 서비스를 시작
+
+# MongoDB 데이터를 보관할 볼륨 정의
+volumes:
+  mongo-data:
