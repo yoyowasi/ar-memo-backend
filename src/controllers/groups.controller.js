@@ -1,3 +1,5 @@
+// src/controllers/groups.controller.js
+
 import { z } from 'zod';
 import {
     createGroup, listMyGroups, getMyGroup, updateGroupByOwner,
@@ -5,7 +7,8 @@ import {
 } from '../services/groups.service.js';
 import { Group } from '../models/Group.js';
 
-async function ensureOwner(req, res, next) {
+// 이 함수를 라우터에서 사용할 수 있도록 export 해줍니다.
+export async function ensureOwner(req, res, next) {
     const g = await Group.findById(req.params.id).lean();
     if (!g) return res.sendStatus(404);
     if (g.ownerId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
@@ -30,31 +33,35 @@ export const GroupsController = {
         res.json(doc);
     },
 
-    update: [ensureOwner, async (req, res) => {
+    // 여기서 ensureOwner 미들웨어를 제거했습니다. (라우터 단에서 처리)
+    update: async (req, res) => {
         const body = z.object({ name: z.string().optional(), color: z.string().optional() }).parse(req.body);
         const updated = await updateGroupByOwner(req.params.id, body);
         if (!updated) return res.sendStatus(404);
         res.json(updated);
-    }],
+    },
 
-    remove: [ensureOwner, async (req, res) => {
+    // 여기서 ensureOwner 미들웨어를 제거했습니다.
+    remove: async (req, res) => {
         const deleted = await deleteGroupByOwner(req.user.id, req.params.id);
         if (!deleted) return res.sendStatus(404);
         res.json({ ok: true });
-    }],
+    },
 
-    addMember: [ensureOwner, async (req, res) => {
+    // 여기서 ensureOwner 미들웨어를 제거했습니다.
+    addMember: async (req, res) => {
         const body = z.object({ userId: z.string().min(1) }).parse(req.body);
         const updated = await addMember(req.params.id, body.userId);
         if (!updated) return res.sendStatus(404);
         res.json(updated);
-    }],
+    },
 
-    removeMember: [ensureOwner, async (req, res) => {
+    // 여기서 ensureOwner 미들웨어를 제거했습니다.
+    removeMember: async (req, res) => {
         const updated = await removeMember(req.params.id, req.params.userId);
         if (!updated) return res.sendStatus(404);
         res.json(updated);
-    }],
+    },
 
     listMemories: async (req, res) => {
         const g = await getMyGroup(req.user.id, req.params.id);
