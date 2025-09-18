@@ -7,7 +7,7 @@ function req(name, fallback) {
 }
 
 export const env = {
-    port: parseInt(req('PORT', '3000'), 10),
+    port: parseInt(req('PORT', '4000'), 10),
     nodeEnv: req('NODE_ENV', 'development'),
     corsOrigin: req('CORS_ORIGIN', '*'),
     mongoUri: req('MONGODB_URI'),
