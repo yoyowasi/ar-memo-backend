@@ -6,7 +6,7 @@ WORKDIR /app
 
 # package.json / package-lock.json 복사 후 의존성 설치
 COPY package*.json ./
-RUN npm install --production
+RUN npm install
 
 # 프로젝트 전체 복사
 COPY . .
