@@ -10,6 +10,7 @@ import { z } from 'zod'; // Zod 에러 처리를 위해 import
 
 import memoriesRouter from './routes/memories.js';
 import groupsRouter from './routes/groups.js';
+import tripRecordsRouter from './routes/tripRecords.js'; // 새로 추가된 라우터 import
 import uploadsRouter from './routes/uploads.js';
 import authRouter from './routes/auth.js';
 import { env } from './env.js'; // 환경 변수를 사용하기 위해 import
@@ -38,6 +39,7 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/auth', authRouter);
 app.use('/api/memories', memoriesRouter);
 app.use('/api/groups', groupsRouter);
+app.use('/api/trip-records', tripRecordsRouter); // 새로 추가된 라우터 등록
 app.use('/api/uploads', uploadsRouter);
 
 // 개선된 전역 에러 핸들러
