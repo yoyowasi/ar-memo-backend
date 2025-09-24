@@ -1,3 +1,4 @@
+````markdown
 # AR-Memo Backend Server
 
 AR-Memo 프로젝트의 백엔드 서버입니다. Docker를 사용하여 간편하게 개발 환경을 구축하고 실행할 수 있습니다.
@@ -24,7 +25,7 @@ AR-Memo 프로젝트의 백엔드 서버입니다. Docker를 사용하여 간편
 ```bash
 git clone <저장소_URL>
 cd ar-memo-backend
-```
+````
 
 #### 2\. `docker-compose.yml` 확인
 
@@ -99,7 +100,7 @@ docker-compose up -d --build
 | 상황 | 명령어 | 설명 |
 | :--- | :--- | :--- |
 | **`.js` 코드만 수정할 때** | (없음) | 그냥 저장만 하면 `nodemon`이 알아서 반영해줍니다. |
-| **PC 재부팅 또는 `down` 이후 서버를 다시 켤 때** | `docker-compose up -d` | 이미지를 재사용하여 빠르게 서버를 시작합니다. |
+| **PC 재부팅 또는 `down` 이후 켤 때** | `docker-compose up -d` | 이미지를 재사용하여 빠르게 서버를 시작합니다. |
 | **라이브러리(패키지)를 새로 설치했을 때** | `docker-compose up -d --build` | 변경된 의존성을 설치하고 이미지를 새로 만듭니다. |
 
 -----
@@ -110,3 +111,47 @@ docker-compose up -d --build
 
 1.  **Postman Collection 가져오기**: 함께 제공된 `ar-memo-backend.postman_collection.json` 파일을 Postman의 `Import` 기능을 통해 불러옵니다.
 2.  **API 테스트**: `Auth` -\> `회원가입` 요청부터 순서대로 실행하며 API를 테스트합니다. 로그인 후 발급되는 토큰은 다른 API를 호출할 때 자동으로 사용됩니다.
+
+-----
+
+### 💾 데이터베이스 연결 및 확인 (MongoDB Compass)
+
+개발 중 데이터베이스에 저장된 실제 데이터를 직접 확인하려면 MongoDB의 공식 GUI 도구인 **MongoDB Compass**를 사용하는 것이 가장 편리합니다.
+
+1.  **MongoDB 포트 외부로 열기**
+    내 PC에 설치된 MongoDB Compass가 Docker 컨테이너로 실행 중인 데이터베이스에 접속하려면, `docker-compose.yml` 파일을 수정하여 포트를 연결해주어야 합니다.
+
+    ```yaml
+    # docker-compose.yml
+    services:
+      mongo:
+        image: mongo
+        container_name: ar-memo-mongo-compose
+        ports: # <-- 이 부분을 추가
+          - "27017:27017" # <-- 이 부분을 추가
+        volumes:
+          - mongo-data:/data/db
+        restart: unless-stopped
+      # ... 이하 생략
+    ```
+
+2.  **컨테이너 다시 시작하기**
+    파일을 저장한 뒤, 터미널에서 아래 명령어를 실행해 수정된 설정을 적용합니다.
+
+    ```bash
+    docker-compose up -d
+    ```
+
+3.  **MongoDB Compass 다운로드 및 연결**
+
+    * \*\*[MongoDB Compass 다운로드 페이지](https://www.mongodb.com/try/download/compass)\*\*로 이동하여 프로그램을 설치합니다.
+    * 프로그램을 실행한 후, `URI` 입력칸에 아래 접속 주소를 붙여넣고 **Connect** 버튼을 누릅니다.
+      ```
+      mongodb://localhost:27017/ar-memo
+      ```
+    * 연결에 성공하면 `ar-memo` 데이터베이스와 그 안의 컬렉션(`users`, `memories` 등)을 클릭하여 데이터를 자유롭게 조회하고 수정할 수 있습니다.
+
+<!-- end list -->
+
+```
+```

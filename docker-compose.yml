@@ -1,14 +1,16 @@
 # docker-compose.yml
 
-version: '3.8' # Docker Compose 파일 형식 버전
+version: '3.8'
 
 services:
-  # 1. MongoDB 서비스 설정
   mongo:
-    image: mongo # 사용할 이미지
-    container_name: ar-memo-mongo-compose # 컨테이너 이름
+    image: mongo
+    container_name: ar-memo-mongo-compose
+    # 👇 이 부분을 추가해 주세요.
+    ports:
+      - "27017:27017" # 컨테이너의 27017 포트를 내 PC의 27017 포트로 연결
     volumes:
-      - mongo-data:/data/db # 데이터를 영구적으로 저장하기 위한 볼륨
+      - mongo-data:/data/db
     restart: unless-stopped
 
   # 2. 백엔드 서비스 설정
