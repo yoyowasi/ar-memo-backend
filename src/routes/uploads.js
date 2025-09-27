@@ -20,8 +20,17 @@ const ALLOWED_MIME = new Set([
     'image/png',
     'image/webp',
     'image/heic',
-    'image/heif'
+    'image/heif',
 ]);
+
+// 기기에서 넘어온 원본 확장자 매핑 (그대로 저장)
+const EXT_BY_MIME = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/heic': 'heic',
+    'image/heif': 'heif',
+};
 
 // memoryStorage + strict limits
 const upload = multer({
@@ -30,15 +39,15 @@ const upload = multer({
         fileSize: MAX_FILE_SIZE,
         files: 1,
         fields: 0,
-        parts: 2,            // boundary 조작 DoS 억제
-        fieldNameSize: 100
+        parts: 2, // boundary 조작 DoS 억제
+        fieldNameSize: 100,
     },
     fileFilter: (_req, file, cb) => {
         if (!ALLOWED_MIME.has(file.mimetype)) {
             return cb(new Error('Unsupported image type'));
         }
         cb(null, true);
-    }
+    },
 });
 
 // ---------- helpers ----------
@@ -80,55 +89,78 @@ function toHttpError(err) {
 /**
  * POST /api/uploads/photo
  * form-data: file (File)
- * response: { url, thumbUrl, width, height, bytes }
+ * response: { url, thumbUrl, width, height, bytes, mime, ext }
+ *
+ * 변경점:
+ * - 메인 이미지는 "원본 그대로" 저장 (형식 변환 없음, EXIF 포함 그대로 유지)
+ * - 썸네일만 별도로 생성 (JPEG)
  */
-router.post('/photo', async (req, res, next) => {
+router.post('/photo', async (req, res) => {
     try {
-        // 안전한 실행 (malformed 요청으로 인한 crash 방지)
         await runMulterSingle(req, res, 'file');
 
         if (!req.file) {
             return res.status(400).json({ error: 'No file' });
         }
-        if (!ALLOWED_MIME.has(req.file.mimetype)) {
+        const { mimetype, buffer, size } = req.file;
+        if (!ALLOWED_MIME.has(mimetype)) {
             return res.status(400).json({ error: 'Unsupported image type' });
         }
 
+        const ext = EXT_BY_MIME[mimetype] || 'bin'; // fallback
         const folder = todayFolder();
         const dir = path.join(ROOT_UPLOAD, folder);
         ensureDir(dir);
 
         const id = uid();
-        const mainName = `${id}.webp`;
-        const thumbName = `${id}.thumb.webp`;
+        const mainName = `${id}.${ext}`;
+        const thumbName = `${id}.thumb.jpg`; // 썸네일은 웹호환성 높은 JPEG로
         const mainPath = path.join(dir, mainName);
         const thumbPath = path.join(dir, thumbName);
 
-        // 메인(긴변 1600), 썸네일(300x300), EXIF 제거
-        const mainPipeline = sharp(req.file.buffer, { failOn: 'none' })
-            .rotate()
-            .withMetadata({ exif: undefined, icc: undefined })
-            .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 75 });
+        // 1) 메타데이터(크기)만 읽고, 메인 파일은 "원본 그대로" 저장
+        //    (EXIF 위치정보 등 유지)
+        let width = undefined;
+        let height = undefined;
+        try {
+            const meta = await sharp(buffer, { failOn: 'none' }).metadata();
+            width = meta.width;
+            height = meta.height;
+        } catch {
+            // 메타데이터 읽기 실패해도 업로드는 진행
+        }
 
-        const thumbPipeline = sharp(req.file.buffer, { failOn: 'none' })
-            .rotate()
-            .withMetadata({ exif: undefined, icc: undefined })
-            .resize({ width: 300, height: 300, fit: 'cover' })
-            .webp({ quality: 70 });
+        // 원본 그대로 저장
+        await fs.promises.writeFile(mainPath, buffer);
 
-        const [{ width, height, size: bytes }] = await Promise.all([
-            mainPipeline.toFile(mainPath),
-            thumbPipeline.toFile(thumbPath)
-        ]);
+        // 2) 썸네일 생성 (회전 적용, EXIF는 제거)
+        let thumbCreated = false;
+        try {
+            await sharp(buffer, { failOn: 'none' })
+                .rotate()
+                .resize({ width: 300, height: 300, fit: 'cover' })
+                .jpeg({ quality: 80 })
+                .toFile(thumbPath);
+            thumbCreated = true;
+        } catch {
+            // 환경에서 HEIC/HEIF 디코딩이 불가한 경우가 있을 수 있음 -> 썸네일 생략
+            thumbCreated = false;
+        }
 
         const url = `/uploads/${folder}/${mainName}`;
-        const thumbUrl = `/uploads/${folder}/${thumbName}`;
+        const thumbUrl = thumbCreated ? `/uploads/${folder}/${thumbName}` : null;
 
-        return res.status(201).json({ url, thumbUrl, width, height, bytes });
+        return res.status(201).json({
+            url,
+            thumbUrl,
+            width,
+            height,
+            bytes: size,
+            mime: mimetype,
+            ext,
+        });
     } catch (err) {
         const { status, message } = toHttpError(err);
-        // 전역 에러핸들러로 넘기지 않고 여기서 응답 (업로드 라우트는 즉시 응답)
         return res.status(status).json({ error: message });
     }
 });
