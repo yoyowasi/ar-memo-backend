@@ -6,7 +6,6 @@ services:
   mongo:
     image: mongo
     container_name: ar-memo-mongo-compose
-    # 👇 이 부분을 추가해 주세요.
     ports:
       - "27017:27017" # 컨테이너의 27017 포트를 내 PC의 27017 포트로 연결
     volumes:
@@ -21,8 +20,9 @@ services:
       - "4000:4000" # 포트 매핑
     volumes:
       # 중요: 내 컴퓨터의 src 폴더를 컨테이너의 /app/src 폴더와 동기화
-      # 이렇게 하면 코드를 저장할 때마다 컨테이너 내부 코드도 바로 변경됨
       - ./src:/app/src
+      # 👇 이 줄이 추가되었습니다! PC의 uploads 폴더와 컨테이너 내부를 연결합니다.
+      - ./uploads:/app/uploads
     environment:
       # 필요한 환경 변수들을 여기에 모두 정의
       - MONGODB_URI=mongodb://mongo:27017/ar-memo
