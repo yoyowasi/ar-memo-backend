@@ -3,6 +3,7 @@ import {
     createMemory, getMyMemoryById, updateMyMemory, deleteMyMemory,
     listMyMemories, findMyNearby, findMyInView
 } from '../services/memories.service.js';
+import { Memory } from '../models/Memory.js'; // <--- 이 줄이 추가되었습니다!
 
 const createBody = z.object({
     latitude: z.number().min(-90).max(90),

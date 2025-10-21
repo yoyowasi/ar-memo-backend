@@ -1,6 +1,18 @@
 // src/services/tripRecords.service.js
 import { TripRecord } from '../models/TripRecord.js';
 
+// --- location 객체 생성 헬퍼 (추가) ---
+function createLocation(data) {
+    if (data.latitude != null && data.longitude != null) {
+        return {
+            type: 'Point',
+            coordinates: [data.longitude, data.latitude] // GeoJSON: [lng, lat] 순서
+        };
+    }
+    return null;
+}
+// ---------------------------------
+
 export async function createTripRecord(userId, data) {
     return TripRecord.create({
         userId,
@@ -8,7 +20,8 @@ export async function createTripRecord(userId, data) {
         title: data.title,
         content: data.content ?? '',
         date: data.date,
-        photoUrls: data.photoUrls ?? []
+        photoUrls: data.photoUrls ?? [],
+        location: createLocation(data) // <-- location 추가
     });
 }
 
@@ -21,9 +34,18 @@ export async function getMyTripRecordById(userId, id) {
 }
 
 export async function updateMyTripRecord(userId, id, body) {
+    // --- location 필드 업데이트 처리 (추가) ---
+    if (body.latitude != null && body.longitude != null) {
+        body.location = createLocation(body);
+    }
+    // controller에서 받은 위경도 필드 제거
+    delete body.latitude;
+    delete body.longitude;
+    // ---------------------------------
+
     return TripRecord.findOneAndUpdate(
         { _id: id, userId },
-        body,
+        body, // body에 location 객체가 포함됨
         { new: true, runValidators: true }
     );
 }
