@@ -13,7 +13,12 @@ const __dirname = path.dirname(__filename);
 const router = Router();
 
 // ---------- config ----------
-const ROOT_UPLOAD = path.join(__dirname, '../uploads');
+/**
+ * 🔴 핵심: 저장 디렉터리를 src/uploads 로 고정 (app.js 의 정적 서빙과 동일)
+ *  - 여기와 app.js 의 UPLOAD_DIR 이 항상 같은 절대경로여야 404 가 나지 않음.
+ */
+const ROOT_UPLOAD = path.resolve(__dirname, '../uploads'); // routes 기준 ../uploads == src/uploads
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_MIME = new Set([
     'image/jpeg',
@@ -23,7 +28,7 @@ const ALLOWED_MIME = new Set([
     'image/heif',
 ]);
 
-// 기기에서 넘어온 원본 확장자 매핑 (그대로 저장)
+// 원본 확장자 유지
 const EXT_BY_MIME = {
     'image/jpeg': 'jpg',
     'image/png': 'png',
@@ -39,7 +44,7 @@ const upload = multer({
         fileSize: MAX_FILE_SIZE,
         files: 1,
         fields: 0,
-        parts: 2, // boundary 조작 DoS 억제
+        parts: 2,
         fieldNameSize: 100,
     },
     fileFilter: (_req, file, cb) => {
@@ -64,7 +69,6 @@ function todayFolder() {
     const day = String(d.getUTCDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
 }
-// multer -> promise 래핑 (에러 안전)
 function runMulterSingle(req, res, field) {
     return new Promise((resolve, reject) => {
         upload.single(field)(req, res, (err) => {
@@ -73,10 +77,8 @@ function runMulterSingle(req, res, field) {
         });
     });
 }
-// Multer/기타 에러 정규화
 function toHttpError(err) {
     if (err instanceof MulterError) {
-        // 제한 초과 등
         if (err.code === 'LIMIT_FILE_SIZE') {
             return { status: 413, message: 'File too large' };
         }
@@ -91,9 +93,8 @@ function toHttpError(err) {
  * form-data: file (File)
  * response: { url, thumbUrl, width, height, bytes, mime, ext }
  *
- * 변경점:
- * - 메인 이미지는 "원본 그대로" 저장 (형식 변환 없음, EXIF 포함 그대로 유지)
- * - 썸네일만 별도로 생성 (JPEG)
+ * - 메인 이미지는 원본 그대로 저장(EXIF 유지)
+ * - 썸네일만 JPEG로 생성
  */
 router.post('/photo', async (req, res) => {
     try {
@@ -107,33 +108,31 @@ router.post('/photo', async (req, res) => {
             return res.status(400).json({ error: 'Unsupported image type' });
         }
 
-        const ext = EXT_BY_MIME[mimetype] || 'bin'; // fallback
+        const ext = EXT_BY_MIME[mimetype] || 'bin';
         const folder = todayFolder();
         const dir = path.join(ROOT_UPLOAD, folder);
         ensureDir(dir);
 
         const id = uid();
         const mainName = `${id}.${ext}`;
-        const thumbName = `${id}.thumb.jpg`; // 썸네일은 웹호환성 높은 JPEG로
+        const thumbName = `${id}.thumb.jpg`;
         const mainPath = path.join(dir, mainName);
         const thumbPath = path.join(dir, thumbName);
 
-        // 1) 메타데이터(크기)만 읽고, 메인 파일은 "원본 그대로" 저장
-        //    (EXIF 위치정보 등 유지)
-        let width = undefined;
-        let height = undefined;
+        let width;
+        let height;
         try {
             const meta = await sharp(buffer, { failOn: 'none' }).metadata();
             width = meta.width;
             height = meta.height;
         } catch {
-            // 메타데이터 읽기 실패해도 업로드는 진행
+            // 메타데이터 실패해도 저장은 계속
         }
 
-        // 원본 그대로 저장
+        // 원본 저장 (EXIF 포함)
         await fs.promises.writeFile(mainPath, buffer);
 
-        // 2) 썸네일 생성 (회전 적용, EXIF는 제거)
+        // 썸네일 저장 (회전 적용)
         let thumbCreated = false;
         try {
             await sharp(buffer, { failOn: 'none' })
@@ -143,7 +142,6 @@ router.post('/photo', async (req, res) => {
                 .toFile(thumbPath);
             thumbCreated = true;
         } catch {
-            // 환경에서 HEIC/HEIF 디코딩이 불가한 경우가 있을 수 있음 -> 썸네일 생략
             thumbCreated = false;
         }
 
