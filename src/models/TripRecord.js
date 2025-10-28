@@ -7,8 +7,12 @@ const TripRecordSchema = new mongoose.Schema(
         groupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', default: null },
         title: { type: String, required: true },
         content: { type: String, default: '' },
-        date: { type: Date, required: true },
-        photoUrls: { type: [String], default: [] }
+        date: { type: Date, required: true, index: true }, // ✅ 수정: index: true 추가
+        photoUrls: { type: [String], default: [] },
+
+        // ✅ 추가: 좌표 필드
+        latitude: { type: Number, default: null },
+        longitude: { type: Number, default: null },
     },
     { timestamps: true }
 );
