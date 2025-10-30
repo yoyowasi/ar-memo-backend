@@ -2,22 +2,19 @@
 import { Router } from 'express';
 import multer, { MulterError } from 'multer';
 import sharp from 'sharp';
-import fs from 'fs';
-import path from 'path';
+// 🔴 fs, path, fileURLToPath 는 삭제
 import crypto from 'crypto';
-import { fileURLToPath } from 'url';
+// 🟢 GCS 서비스 파일에서 함수를 가져옵니다.
+import { uploadBuffer } from '../services/gcs.service.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const router = Router();
 
-// ---------- config ----------
-/**
- * 🔴 핵심: 저장 디렉터리를 src/uploads 로 고정 (app.js 의 정적 서빙과 동일)
- *  - 여기와 app.js 의 UPLOAD_DIR 이 항상 같은 절대경로여야 404 가 나지 않음.
- */
-const ROOT_UPLOAD = path.resolve(__dirname, '../uploads'); // routes 기준 ../uploads == src/uploads
+// 🔴 로컬 파일 경로 관련 상수/함수 제거
+// const __filename = fileURLToPath(import.meta.url); // 삭제
+// const __dirname = path.dirname(__filename); // 삭제
+// const ROOT_UPLOAD = path.resolve(__dirname, '../uploads'); // 삭제
+// function ensureDir(dir) { ... } // 삭제
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_MIME = new Set([
@@ -56,9 +53,9 @@ const upload = multer({
 });
 
 // ---------- helpers ----------
-function ensureDir(dir) {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
+// 🔴 로컬 디스크 관련 함수 제거
+// function ensureDir(dir) { ... } // 삭제
+
 function uid() {
     return crypto.randomBytes(16).toString('hex');
 }
@@ -92,9 +89,6 @@ function toHttpError(err) {
  * POST /api/uploads/photo
  * form-data: file (File)
  * response: { url, thumbUrl, width, height, bytes, mime, ext }
- *
- * - 메인 이미지는 원본 그대로 저장(EXIF 유지)
- * - 썸네일만 JPEG로 생성
  */
 router.post('/photo', async (req, res) => {
     try {
@@ -110,14 +104,15 @@ router.post('/photo', async (req, res) => {
 
         const ext = EXT_BY_MIME[mimetype] || 'bin';
         const folder = todayFolder();
-        const dir = path.join(ROOT_UPLOAD, folder);
-        ensureDir(dir);
+        // 🔴 dir, ensureDir, mainPath, thumbPath 관련 로직 모두 삭제
+        // const dir = path.join(ROOT_UPLOAD, folder); // 삭제
+        // ensureDir(dir); // 삭제
 
         const id = uid();
         const mainName = `${id}.${ext}`;
         const thumbName = `${id}.thumb.jpg`;
-        const mainPath = path.join(dir, mainName);
-        const thumbPath = path.join(dir, thumbName);
+        // const mainPath = path.join(dir, mainName); // 삭제
+        // const thumbPath = path.join(dir, thumbName); // 삭제
 
         let width;
         let height;
@@ -129,31 +124,40 @@ router.post('/photo', async (req, res) => {
             // 메타데이터 실패해도 저장은 계속
         }
 
-        // 원본 저장 (EXIF 포함)
-        await fs.promises.writeFile(mainPath, buffer);
+        // 🔴 원본 저장 (GCS)
+        // await fs.promises.writeFile(mainPath, buffer); // ❌ 이 줄 삭제
+        const mainGcsKey = `${folder}/${mainName}`;
+        const { publicUrl: url, bytes: uploadedSize } = await uploadBuffer(mainGcsKey, buffer, mimetype);
 
-        // 썸네일 저장 (회전 적용)
+
+        // 🔴 썸네일 생성 및 저장 (GCS)
+        let thumbUrl = null;
         let thumbCreated = false;
         try {
-            await sharp(buffer, { failOn: 'none' })
+            const thumbnailBuffer = await sharp(buffer, { failOn: 'none' })
                 .rotate()
                 .resize({ width: 300, height: 300, fit: 'cover' })
                 .jpeg({ quality: 80 })
-                .toFile(thumbPath);
+                .toBuffer(); // 버퍼로 출력
+
+            const thumbGcsKey = `${folder}/${thumbName}`;
+            const { publicUrl: thumbPublicUrl } = await uploadBuffer(thumbGcsKey, thumbnailBuffer, 'image/jpeg');
+
+            thumbUrl = thumbPublicUrl;
             thumbCreated = true;
         } catch {
             thumbCreated = false;
         }
 
-        const url = `/uploads/${folder}/${mainName}`;
-        const thumbUrl = thumbCreated ? `/uploads/${folder}/${thumbName}` : null;
+        // const url = `/uploads/${folder}/${mainName}`; // ❌ 이 줄 삭제 (GCS URL로 대체됨)
+        // const thumbUrl = thumbCreated ? `/uploads/${folder}/${thumbName}` : null; // ❌ 이 줄 삭제
 
         return res.status(201).json({
-            url,
-            thumbUrl,
+            url, // GCS Public URL
+            thumbUrl, // GCS Public URL
             width,
             height,
-            bytes: size,
+            bytes: uploadedSize,
             mime: mimetype,
             ext,
         });
