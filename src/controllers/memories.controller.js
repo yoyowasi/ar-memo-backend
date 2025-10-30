@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Memory } from '../models/Memory.js';
 import {
     createMemory, getMyMemoryById, updateMyMemory, deleteMyMemory,
     listMyMemories, findMyNearby, findMyInView
