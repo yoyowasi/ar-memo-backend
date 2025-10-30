@@ -2,19 +2,23 @@
 import { Router } from 'express';
 import multer, { MulterError } from 'multer';
 import sharp from 'sharp';
-// 🔴 fs, path, fileURLToPath 는 삭제
 import crypto from 'crypto';
+// 🔴 fs, path, fileURLToPath 는 제거합니다.
+// import fs from 'fs';
+// import path from 'path';
+// import { fileURLToPath } from 'url';
+
 // 🟢 GCS 서비스 파일에서 함수를 가져옵니다.
 import { uploadBuffer } from '../services/gcs.service.js';
 
 
 const router = Router();
 
-// 🔴 로컬 파일 경로 관련 상수/함수 제거
+// 🔴 로컬 파일 경로 관련 상수/함수 제거 (ROOT_UPLOAD, __filename, __dirname)
 // const __filename = fileURLToPath(import.meta.url); // 삭제
 // const __dirname = path.dirname(__filename); // 삭제
 // const ROOT_UPLOAD = path.resolve(__dirname, '../uploads'); // 삭제
-// function ensureDir(dir) { ... } // 삭제
+
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_MIME = new Set([
@@ -85,11 +89,6 @@ function toHttpError(err) {
 }
 
 // ---------- routes ----------
-/**
- * POST /api/uploads/photo
- * form-data: file (File)
- * response: { url, thumbUrl, width, height, bytes, mime, ext }
- */
 router.post('/photo', async (req, res) => {
     try {
         await runMulterSingle(req, res, 'file');
@@ -104,7 +103,7 @@ router.post('/photo', async (req, res) => {
 
         const ext = EXT_BY_MIME[mimetype] || 'bin';
         const folder = todayFolder();
-        // 🔴 dir, ensureDir, mainPath, thumbPath 관련 로직 모두 삭제
+        // 🔴 로컬 경로 및 저장 관련 로직 모두 제거
         // const dir = path.join(ROOT_UPLOAD, folder); // 삭제
         // ensureDir(dir); // 삭제
 
@@ -112,7 +111,6 @@ router.post('/photo', async (req, res) => {
         const mainName = `${id}.${ext}`;
         const thumbName = `${id}.thumb.jpg`;
         // const mainPath = path.join(dir, mainName); // 삭제
-        // const thumbPath = path.join(dir, thumbName); // 삭제
 
         let width;
         let height;
@@ -124,13 +122,13 @@ router.post('/photo', async (req, res) => {
             // 메타데이터 실패해도 저장은 계속
         }
 
-        // 🔴 원본 저장 (GCS)
-        // await fs.promises.writeFile(mainPath, buffer); // ❌ 이 줄 삭제
+        // 🔴 [GCS 업로드] 원본 저장 (로컬 파일 대신 GCS 사용)
+        // await fs.promises.writeFile(mainPath, buffer); // ❌ 로컬 저장 삭제
         const mainGcsKey = `${folder}/${mainName}`;
         const { publicUrl: url, bytes: uploadedSize } = await uploadBuffer(mainGcsKey, buffer, mimetype);
 
 
-        // 🔴 썸네일 생성 및 저장 (GCS)
+        // 🔴 [GCS 업로드] 썸네일 생성 및 저장
         let thumbUrl = null;
         let thumbCreated = false;
         try {
@@ -149,8 +147,8 @@ router.post('/photo', async (req, res) => {
             thumbCreated = false;
         }
 
-        // const url = `/uploads/${folder}/${mainName}`; // ❌ 이 줄 삭제 (GCS URL로 대체됨)
-        // const thumbUrl = thumbCreated ? `/uploads/${folder}/${thumbName}` : null; // ❌ 이 줄 삭제
+        // const url = `/uploads/${folder}/${mainName}`; // ❌ 로컬 URL 대신 GCS URL 사용
+        // const thumbUrl = thumbCreated ? `/uploads/${folder}/${thumbName}` : null; // ❌ 로컬 URL 대신 GCS URL 사용
 
         return res.status(201).json({
             url, // GCS Public URL
