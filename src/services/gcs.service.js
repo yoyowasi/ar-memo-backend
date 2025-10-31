@@ -41,7 +41,8 @@ export async function uploadBuffer(key, buffer, contentType) {
             contentType: contentType,
             // 캐시 최적화: 1년 캐시 유지
             cacheControl: 'public, max-age=31536000, immutable'
-        }
+        },
+        // 🚨 public: true 옵션이 없어야 비공개로 저장됩니다.
     });
 
     const publicUrl = `https://storage.googleapis.com/${env.gcs.bucket}/${key}`;
@@ -51,3 +52,29 @@ export async function uploadBuffer(key, buffer, contentType) {
         bytes: buffer.length
     };
 }
+
+// ▼▼▼▼▼ [새 함수 추가] ▼▼▼▼▼
+/**
+ * GCS V4 Signed URL을 생성합니다. (읽기용)
+ * @param {string} key - GCS에 저장된 파일 이름 (객체 키)
+ * @returns {Promise<string>} 1분 동안 유효한 읽기 전용 Signed URL
+ */
+export async function createPresignedReadUrl(key) {
+    // URL에서 쿼리스트링 (예: ?alt=media)이 붙어있는 경우 제거
+    const cleanKey = key.split('?')[0];
+
+    const options = {
+        version: 'v4',
+        action: 'read',
+        expires: Date.now() + 1 * 60 * 1000, // 1분 후 만료
+    };
+
+    try {
+        const [url] = await bucket.file(cleanKey).getSignedUrl(options);
+        return url;
+    } catch (e) {
+        console.error(`[GCS Read URL] Failed to sign key: ${cleanKey}`, e);
+        return null; // 서명 실패 시 null 반환
+    }
+}
+// ▲▲▲▲▲ [새 함수 추가] ▲▲▲▲▲
