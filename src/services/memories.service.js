@@ -1,99 +1,93 @@
 // src/services/memories.service.js
 import { Memory } from '../models/Memory.js';
-// ▼▼▼ [추가] ▼▼▼
-import { createPresignedReadUrl } from './gcs.service.js';
-import { env } from '../env.js';
+// 🟢 1. gcs.service에서 올바른 이름의 함수 import
+import { generateSignedReadUrl } from './gcs.service.js';
 
-// ▼▼▼ [헬퍼 함수 추가] ▼▼▼
 /**
- * DB에 저장된 GCS publicUrl에서 파일 키(key)를 추출합니다.
- * @param {string} url (예: https://storage.googleapis.com/BUCKET_NAME/KEY)
- * @returns {string} (예: KEY)
+ * 🟢 2. GCS Key를 Signed URL로 변환하는 헬퍼 함수
+ * @param {string} key - 단일 GCS key
+ * @returns {Promise<string | null>} 서명된 URL
  */
-function getKeyFromUrl(url) {
-    if (!url) return null;
-    try {
-        const prefix = `https://storage.googleapis.com/${env.gcs.bucket}/`;
-        if (url.startsWith(prefix)) {
-            return url.substring(prefix.length);
-        }
-        // GCS URL 형식이 아닌 경우 (예: 로컬 /uploads/...)
-        return null;
-    } catch (e) {
-        return null;
-    }
+async function mapKeyToSignedUrl(key) {
+    if (!key) return null;
+    return generateSignedReadUrl(key);
 }
 
 /**
- * Memory 객체의 photoUrl, thumbUrl을 Signed URL로 변환합니다.
- * @param {object} memory Mongoose Document 또는 lean() 객체
- * @returns {Promise<object>} URL이 변환된 객체
+ * 🟢 3. Mongoose 문서(lean)의 URL 필드를 변환하는 헬퍼 함수
+ * @param {object} doc - .lean()으로 변환된 Mongoose 문서
  */
-async function signMemoryUrls(memory) {
-    if (!memory) return null;
-    // lean() 객체가 아닐 경우를 대비해 .toObject() 사용
-    const doc = memory.toObject ? memory.toObject() : memory;
-
-    const photoKey = getKeyFromUrl(doc.photoUrl);
-    const thumbKey = getKeyFromUrl(doc.thumbUrl);
-
-    // Promise.all로 병렬 처리
-    const [signedPhotoUrl, signedThumbUrl] = await Promise.all([
-        photoKey ? createPresignedReadUrl(photoKey) : Promise.resolve(doc.photoUrl), // 키가 있으면 서명, 없으면 원본 유지
-        thumbKey ? createPresignedReadUrl(thumbKey) : Promise.resolve(doc.thumbUrl)  // 키가 있으면 서명, 없으면 원본 유지
+async function hydrateDocUrls(doc) {
+    if (!doc) return doc;
+    // 병렬로 처리
+    [doc.photoUrl, doc.audioUrl, doc.thumbUrl] = await Promise.all([
+        mapKeyToSignedUrl(doc.photoUrl), // photoUrl key -> signed url
+        mapKeyToSignedUrl(doc.audioUrl), // audioUrl key -> signed url
+        mapKeyToSignedUrl(doc.thumbUrl)  // thumbUrl key -> signed url
     ]);
-
-    return {
-        ...doc,
-        photoUrl: signedPhotoUrl,
-        thumbUrl: signedThumbUrl,
-    };
+    return doc;
 }
-// ▲▲▲ [헬퍼 함수 추가] ▲▲▲
 
+/**
+ * 🟢 4. Mongoose 문서 목록(lean)의 URL 필드를 변환하는 헬퍼 함수
+ * @param {object[]} docs - .lean()으로 변환된 Mongoose 문서 배열
+ */
+async function hydrateDocsUrls(docs) {
+    if (!docs || docs.length === 0) return docs;
+    // 모든 문서를 병렬로 처리
+    return Promise.all(docs.map(doc => hydrateDocUrls(doc)));
+}
+
+
+// === 서비스 함수들 수정 ===
 
 export async function createMemory(userId, d) {
-    const doc = await Memory.create({ // 원본은 DB에 그대로 저장
+    // 🟢 create 에서는 client가 보낸 key를 그대로 저장
+    const doc = await Memory.create({
         userId,
         location: { type: 'Point', coordinates: [d.longitude, d.latitude] },
         anchor: d.anchor ?? null,
         text: d.text,
-        photoUrl: d.photoUrl ?? undefined,
-        audioUrl: d.audioUrl ?? undefined,
-        thumbUrl: d.thumbUrl ?? undefined,
+        photoUrl: d.photoUrl ?? undefined, // (key가 저장됨)
+        audioUrl: d.audioUrl ?? undefined, // (key가 저장됨)
+        thumbUrl: d.thumbUrl ?? undefined, // (key가 저장됨)
         tags: d.tags ?? [],
         favorite: d.favorite ?? false,
         visibility: d.visibility ?? 'private',
         groupId: d.groupId ?? null
     });
-    // ▼▼▼ [수정] ▼▼▼
-    // 클라이언트에 반환하기 전에 URL을 서명합니다.
-    return signMemoryUrls(doc);
+    // 🟢 반환 전 URL 변환 (toObject()로 순수 객체로 만듦)
+    return hydrateDocUrls(doc.toObject());
 }
 
 export async function getMyMemoryById(userId, id) {
+    // .lean()을 추가하여 순수 JS 객체로 반환
     const doc = await Memory.findOne({ _id: id, userId }).lean();
-    // ▼▼▼ [수정] ▼▼▼
-    return signMemoryUrls(doc); // 반환 전 서명
+    // 🟢 반환 전 URL 변환
+    return hydrateDocUrls(doc);
 }
 
 export async function updateMyMemory(userId, id, body) {
-    const updated = await Memory.findOneAndUpdate(
+    // 🟢 update 에서는 client가 보낸 key를 그대로 저장
+    const updatedDoc = await Memory.findOneAndUpdate(
         { _id: id, userId },
-        body,
+        body, // (body에 photoUrl: key, thumbUrl: key 등이 포함됨)
         { new: true, runValidators: true }
     ).lean();
-    // ▼▼▼ [수정] ▼▼▼
-    return signMemoryUrls(updated); // 반환 전 서명
+
+    // 🟢 반환 전 URL 변환
+    return hydrateDocUrls(updatedDoc);
 }
 
 export async function deleteMyMemory(userId, id) {
+    // 삭제 결과(삭제된 문서 또는 null)를 반환합니다.
     return Memory.findOneAndDelete({ _id: id, userId });
 }
 
 export async function listMyMemories(userId, filter, page, limit) {
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
+        // .lean() 추가
         Memory.find({ userId, ...filter })
             .sort({ createdAt: -1 })
             .skip(skip)
@@ -102,52 +96,53 @@ export async function listMyMemories(userId, filter, page, limit) {
         Memory.countDocuments({ userId, ...filter })
     ]);
 
-    // ▼▼▼ [수정] ▼▼▼
-    // 목록의 모든 아이템에 대해 URL 서명
-    const signedItems = await Promise.all(items.map(signMemoryUrls));
-    return { items: signedItems, total };
+    // 🟢 반환 전 URL 변환
+    const hydratedItems = await hydrateDocsUrls(items);
+    return { items: hydratedItems, total };
 }
 
 export async function findMyNearby(userId, lng, lat, radius) {
+    // .lean() 추가.
     const items = await Memory.find({
         userId,
         location: {
             $near: {
                 $geometry: { type: 'Point', coordinates: [lng, lat] },
-                $maxDistance: radius
+                $maxDistance: radius // 미터 단위
             }
         }
     }).limit(500).lean();
 
-    // ▼▼▼ [수정] ▼▼▼
-    const signedItems = await Promise.all(items.map(signMemoryUrls));
-    return signedItems;
+    // 🟢 반환 전 URL 변환
+    return hydrateDocsUrls(items);
 }
 
 export async function findMyInView(userId, bbox, center, limit = 200) {
+    // 주어진 경계 상자(bounding box) 내 메모리 검색
     const polygon = {
         type: 'Polygon',
         coordinates: [[
-            [bbox.swLng, bbox.swLat], [bbox.neLng, bbox.swLat],
-            [bbox.neLng, bbox.neLat], [bbox.swLng, bbox.neLat],
-            [bbox.swLng, bbox.swLat]
+            [bbox.swLng, bbox.swLat], [bbox.neLng, bbox.swLat], // 남서 -> 남동
+            [bbox.neLng, bbox.neLat], [bbox.swLng, bbox.neLat], // 남동 -> 북동 -> 북서
+            [bbox.swLng, bbox.swLat]  // 북서 -> 남서 (닫기)
         ]]
     };
 
+    // Aggregation pipeline 사용: 지리 공간 쿼리 + 거리 기준 정렬 + 제한
     const pipeline = [
         {
             $geoNear: {
-                near: { type: 'Point', coordinates: [center.lng, center.lat] },
-                distanceField: 'distCalculated',
-                spherical: true,
-                query: { userId, location: { $geoWithin: { $geometry: polygon } } }
+                near: { type: 'Point', coordinates: [center.lng, center.lat] }, // 중심점 기준
+                distanceField: 'distCalculated', // 계산된 거리 필드 이름
+                spherical: true, // 구면 거리 계산 사용
+                query: { userId, location: { $geoWithin: { $geometry: polygon } } } // 경계 내 + 사용자 ID 필터
             }
         },
-        { $limit: limit }
+        // $geoNear는 자동으로 거리순 정렬하므로 별도 $sort 불필요
+        { $limit: limit } // 결과 수 제한
     ];
-    const items = await Memory.aggregate(pipeline);
+    const items = await Memory.aggregate(pipeline); // aggregate 결과는 기본적으로 plain JS object
 
-    // ▼▼▼ [수정] ▼▼▼
-    const signedItems = await Promise.all(items.map(signMemoryUrls));
-    return signedItems;
+    // 🟢 반환 전 URL 변환
+    return hydrateDocsUrls(items);
 }
