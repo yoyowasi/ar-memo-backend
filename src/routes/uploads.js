@@ -58,7 +58,10 @@ function uid() {
 function todayFolder() {
     const d = new Date();
     const y = d.getUTCFullYear();
-    const m = String(d.getUTCFullth() + 1).padStart(2, '0');
+    // 🟢🟢🟢 [오타 수정] 🟢🟢🟢
+    // getUTCFullth() -> getUTCMonth()
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    // 🟢🟢🟢 🟢🟢🟢 🟢🟢🟢
     const day = String(d.getUTCDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
 }
@@ -75,9 +78,13 @@ function toHttpError(err) {
         if (err.code === 'LIMIT_FILE_SIZE') {
             return { status: 413, message: 'File too large' };
         }
+        // 400 에러의 원인이었던 'LIMIT_UNEXPECTED_FILE'도 여기서 처리됩니다.
         return { status: 400, message: `Upload error: ${err.code}` };
     }
-    return { status: 400, message: err?.message || 'Upload failed' };
+    // 🟢 d.getUTCFullth() 같은 서버 코드가 터지면 500 에러를 반환합니다.
+    const message = err?.message || 'Upload failed';
+    console.error('Upload Error:', err); // 서버 로그에 에러 기록
+    return { status: 500, message: `Server error: ${message}` };
 }
 
 // ---------- routes ----------
@@ -94,8 +101,7 @@ router.post('/photo', async (req, res) => {
         }
 
         const ext = EXT_BY_MIME[mimetype] || 'bin';
-        const folder = todayFolder();
-        // 🔴 로컬 경로 및 저장 관련 로직 모두 제거 (원래 제거되어 있었음)
+        const folder = todayFolder(); // 🟢 여기서 오타가 났었습니다.
 
         const id = uid();
         const mainName = `${id}.${ext}`;
@@ -123,7 +129,6 @@ router.post('/photo', async (req, res) => {
         // 🟢 [GCS 업로드] 썸네일 생성 및 저장 (key/url 반환)
         let thumbUrl = null;
         let thumbKey = null; // 👈 썸네일 key도 저장
-        // let thumbCreated = false; // (key 존재 여부로 대체 가능)
 
         try {
             const thumbnailBuffer = await sharp(buffer, { failOn: 'none' })
@@ -138,9 +143,8 @@ router.post('/photo', async (req, res) => {
 
             thumbKey = tKey; // 👈 key 저장
             thumbUrl = await generateSignedReadUrl(thumbKey); // 👈 임시 URL 생성
-            // thumbCreated = true;
         } catch {
-            // thumbCreated = false;
+            // 썸네일 생성 실패
         }
 
         // 🟢 DB 저장용 key와 즉시 보기용 url을 모두 반환합니다.
@@ -156,6 +160,7 @@ router.post('/photo', async (req, res) => {
             ext,
         });
     } catch (err) {
+        // 🟢 여기서 "d.getUTCFullth is not a function" 에러가 잡힙니다.
         const { status, message } = toHttpError(err);
         return res.status(status).json({ error: message });
     }
