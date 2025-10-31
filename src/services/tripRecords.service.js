@@ -42,10 +42,14 @@ export async function getMyTripRecordById(userId, id) {
     // .lean()을 추가하여 순수 JavaScript 객체를 반환하도록 수정
     const doc = await TripRecord.findOne({ _id: id, userId })
         .populate({ path: 'groupId', select: 'name color' })
-        .lean();
+        .lean(); // 👈 lean()으로 순수 객체로 만듭니다.
 
     // 🟢 조회 시 key 배열을 임시 URL 배열로 교체
     if (doc && doc.photoUrls) {
+        // 🟢🟢 [핵심 수정] 🟢🟢
+        // 원본 key 목록을 'photoKeys' 필드에 복사
+        doc.photoKeys = [...doc.photoUrls];
+        // 'photoUrls' 필드는 임시 URL로 덮어쓰기
         doc.photoUrls = await mapKeysToSignedUrls(doc.photoUrls);
     }
     return doc;
@@ -95,7 +99,9 @@ export async function listMyTripRecords(userId, filter, page, limit) {
     // 🟢 목록의 모든 item에 대해 URL 변환 적용
     for (const item of items) {
         if (item.photoUrls) {
-            item.photoUrls = await mapKeysToSignedUrls(item.photoUrls);
+            // 🟢🟢 [핵심 수정] 🟢🟢
+            item.photoKeys = [...item.photoUrls]; // 원본 key
+            item.photoUrls = await mapKeysToSignedUrls(item.photoUrls); // 임시 URL
         }
     }
 
