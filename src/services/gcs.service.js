@@ -8,7 +8,7 @@ const storage = new Storage({
 const bucket = storage.bucket(env.gcs.bucket);
 
 /**
- * GCS V4 Signed URL을 생성합니다. (업로드용)
+ * GCS V4 Signed URL을 생성합니다. (업로드용 - 현재 미사용)
  * @param {string} key - GCS에 저장될 파일 이름 (객체 키)
  * @param {string} contentType - 파일의 Content-Type
  * @returns {Promise<{url: string, publicUrl: string}>} Signed URL과 최종 접근 URL
@@ -28,53 +28,49 @@ export async function createPresignedUrl(key, contentType) {
 }
 
 /**
- * 🟢 추가: 메모리 버퍼를 GCS에 직접 업로드합니다.
+ * 🟢 수정: 메모리 버퍼를 GCS에 '비공개'로 직접 업로드하고 'key'를 반환합니다.
  * @param {string} key - GCS에 저장될 파일 이름 (객체 키: 예: 2024-01-01/uuid.jpg)
  * @param {Buffer} buffer - 파일 내용 (Multer의 buffer)
  * @param {string} contentType - 파일의 Content-Type
- * @returns {Promise<{publicUrl: string, bytes: number}>} 업로드된 파일의 최종 접근 URL
+ * @returns {Promise<{key: string, bytes: number}>} 업로드된 파일의 key와 용량
  */
 export async function uploadBuffer(key, buffer, contentType) {
     const file = bucket.file(key);
     await file.save(buffer, {
+        // ⛔ public: true 옵션이 없어야 비공개로 업로드됩니다.
         metadata: {
             contentType: contentType,
             // 캐시 최적화: 1년 캐시 유지
             cacheControl: 'public, max-age=31536000, immutable'
-        },
-        // 🚨 public: true 옵션이 없어야 비공개로 저장됩니다.
+        }
     });
 
-    const publicUrl = `https://storage.googleapis.com/${env.gcs.bucket}/${key}`;
-
+    // publicUrl 대신 key를 반환합니다.
     return {
-        publicUrl,
+        key: key,
         bytes: buffer.length
     };
 }
 
-// ▼▼▼▼▼ [새 함수 추가] ▼▼▼▼▼
 /**
- * GCS V4 Signed URL을 생성합니다. (읽기용)
- * @param {string} key - GCS에 저장된 파일 이름 (객체 키)
- * @returns {Promise<string>} 1분 동안 유효한 읽기 전용 Signed URL
+ * 🟢 추가: 비공개 파일의 임시 읽기 URL (Signed URL)을 생성합니다.
+ * @param {string} key - GCS 객체 키
+ * @returns {Promise<string | null>} 15분간 유효한 서명된 URL (실패 시 null)
  */
-export async function createPresignedReadUrl(key) {
-    // URL에서 쿼리스트링 (예: ?alt=media)이 붙어있는 경우 제거
-    const cleanKey = key.split('?')[0];
+export async function generateSignedReadUrl(key) {
+    if (!key) return null; // key가 없는 경우 null 반환
 
     const options = {
         version: 'v4',
         action: 'read',
-        expires: Date.now() + 1 * 60 * 1000, // 1분 후 만료
+        expires: Date.now() + 15 * 60 * 1000, // 15분 후 만료
     };
 
     try {
-        const [url] = await bucket.file(cleanKey).getSignedUrl(options);
+        const [url] = await bucket.file(key).getSignedUrl(options);
         return url;
     } catch (e) {
-        console.error(`[GCS Read URL] Failed to sign key: ${cleanKey}`, e);
-        return null; // 서명 실패 시 null 반환
+        console.error('Failed to generate signed URL for key:', key, e);
+        return null;
     }
 }
-// ▲▲▲▲▲ [새 함수 추가] ▲▲▲▲▲

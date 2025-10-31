@@ -3,22 +3,15 @@ import { Router } from 'express';
 import multer, { MulterError } from 'multer';
 import sharp from 'sharp';
 import crypto from 'crypto';
-// 🔴 fs, path, fileURLToPath 는 제거합니다.
-// import fs from 'fs';
-// import path from 'path';
-// import { fileURLToPath } from 'url';
+// 🔴 fs, path, fileURLToPath 는 제거합니다. (원래 제거되어 있었음)
 
-// 🟢 GCS 서비스 파일에서 함수를 가져옵니다.
-import { uploadBuffer } from '../services/gcs.service.js';
+// 🟢 GCS 서비스 파일에서 'generateSignedReadUrl' 함수를 추가로 가져옵니다.
+import { uploadBuffer, generateSignedReadUrl } from '../services/gcs.service.js';
 
 
 const router = Router();
 
-// 🔴 로컬 파일 경로 관련 상수/함수 제거 (ROOT_UPLOAD, __filename, __dirname)
-// const __filename = fileURLToPath(import.meta.url); // 삭제
-// const __dirname = path.dirname(__filename); // 삭제
-// const ROOT_UPLOAD = path.resolve(__dirname, '../uploads'); // 삭제
-
+// 🔴 로컬 파일 경로 관련 상수/함수 제거 (원래 제거되어 있었음)
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_MIME = new Set([
@@ -57,8 +50,7 @@ const upload = multer({
 });
 
 // ---------- helpers ----------
-// 🔴 로컬 디스크 관련 함수 제거
-// function ensureDir(dir) { ... } // 삭제
+// 🔴 로컬 디스크 관련 함수 제거 (원래 제거되어 있었음)
 
 function uid() {
     return crypto.randomBytes(16).toString('hex');
@@ -66,7 +58,7 @@ function uid() {
 function todayFolder() {
     const d = new Date();
     const y = d.getUTCFullYear();
-    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const m = String(d.getUTCFullth() + 1).padStart(2, '0');
     const day = String(d.getUTCDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
 }
@@ -103,14 +95,11 @@ router.post('/photo', async (req, res) => {
 
         const ext = EXT_BY_MIME[mimetype] || 'bin';
         const folder = todayFolder();
-        // 🔴 로컬 경로 및 저장 관련 로직 모두 제거
-        // const dir = path.join(ROOT_UPLOAD, folder); // 삭제
-        // ensureDir(dir); // 삭제
+        // 🔴 로컬 경로 및 저장 관련 로직 모두 제거 (원래 제거되어 있었음)
 
         const id = uid();
         const mainName = `${id}.${ext}`;
         const thumbName = `${id}.thumb.jpg`;
-        // const mainPath = path.join(dir, mainName); // 삭제
 
         let width;
         let height;
@@ -122,15 +111,20 @@ router.post('/photo', async (req, res) => {
             // 메타데이터 실패해도 저장은 계속
         }
 
-        // 🔴 [GCS 업로드] 원본 저장 (로컬 파일 대신 GCS 사용)
-        // await fs.promises.writeFile(mainPath, buffer); // ❌ 로컬 저장 삭제
+        // 🟢 [GCS 업로드] 원본 저장 (key를 반환받음)
         const mainGcsKey = `${folder}/${mainName}`;
-        const { publicUrl: url, bytes: uploadedSize } = await uploadBuffer(mainGcsKey, buffer, mimetype);
+        // 🔽 반환값이 { key, bytes }가 됩니다.
+        const { key, bytes: uploadedSize } = await uploadBuffer(mainGcsKey, buffer, mimetype);
+
+        // 🟢 [GCS 서명] 즉시 보기를 위한 임시 URL 생성
+        const url = await generateSignedReadUrl(key);
 
 
-        // 🔴 [GCS 업로드] 썸네일 생성 및 저장
+        // 🟢 [GCS 업로드] 썸네일 생성 및 저장 (key/url 반환)
         let thumbUrl = null;
-        let thumbCreated = false;
+        let thumbKey = null; // 👈 썸네일 key도 저장
+        // let thumbCreated = false; // (key 존재 여부로 대체 가능)
+
         try {
             const thumbnailBuffer = await sharp(buffer, { failOn: 'none' })
                 .rotate()
@@ -139,20 +133,22 @@ router.post('/photo', async (req, res) => {
                 .toBuffer(); // 버퍼로 출력
 
             const thumbGcsKey = `${folder}/${thumbName}`;
-            const { publicUrl: thumbPublicUrl } = await uploadBuffer(thumbGcsKey, thumbnailBuffer, 'image/jpeg');
+            // 🔽 썸네일의 key(tKey)를 받습니다.
+            const { key: tKey } = await uploadBuffer(thumbGcsKey, thumbnailBuffer, 'image/jpeg');
 
-            thumbUrl = thumbPublicUrl;
-            thumbCreated = true;
+            thumbKey = tKey; // 👈 key 저장
+            thumbUrl = await generateSignedReadUrl(thumbKey); // 👈 임시 URL 생성
+            // thumbCreated = true;
         } catch {
-            thumbCreated = false;
+            // thumbCreated = false;
         }
 
-        // const url = `/uploads/${folder}/${mainName}`; // ❌ 로컬 URL 대신 GCS URL 사용
-        // const thumbUrl = thumbCreated ? `/uploads/${folder}/${thumbName}` : null; // ❌ 로컬 URL 대신 GCS URL 사용
-
+        // 🟢 DB 저장용 key와 즉시 보기용 url을 모두 반환합니다.
         return res.status(201).json({
-            url, // GCS Public URL
-            thumbUrl, // GCS Public URL
+            key,      // 👈 (A) DB 저장용: "2025-10-31/uuid.jpg"
+            url,      // 👈 (B) 즉시 보기용: "https://...SignedUrl..."
+            thumbKey, // 👈 (A) DB 저장용 (썸네일)
+            thumbUrl, // 👈 (B) 즉시 보기용 (썸네일)
             width,
             height,
             bytes: uploadedSize,
