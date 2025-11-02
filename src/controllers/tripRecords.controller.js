@@ -44,11 +44,15 @@ const pagingQuery = z.object({
 });
 
 export const TripRecordsController = {
+    // src/controllers/tripRecords.controller.js
     create: async (req, res) => {
         const data = createBody.parse(req.body);
+        console.log('👀 create body:', data);            // 1차 확인
         const doc = await createTripRecord(req.user.id, data);
+        console.log('👀 created doc:', doc);             // 2차 확인
         res.status(201).json(doc);
     },
+
 
     detail: async (req, res) => {
         const doc = await getMyTripRecordById(req.user.id, req.params.id);

@@ -4,77 +4,109 @@ import { TripRecord } from '../models/TripRecord.js';
 import { generateSignedReadUrl } from './gcs.service.js';
 
 /**
- * 🟢 GCS Key 배열을 Signed URL 배열로 변환하는 헬퍼 함수
- * @param {string[]} keys - GCS key 배열
- * @returns {Promise<string[]>} 서명된 URL 배열
+ * GCS key 배열을 Signed URL 배열로 변환
+ * @param {string[]} keys
+ * @returns {Promise<string[]>}
  */
 async function mapKeysToSignedUrls(keys) {
     if (!keys || keys.length === 0) return [];
-    // 모든 key에 대해 병렬로 Signed URL 생성을 요청
     const urls = await Promise.all(
-        keys.map(key => key ? generateSignedReadUrl(key) : null)
+        keys.map(key => (key ? generateSignedReadUrl(key) : null))
     );
-    return urls.filter(Boolean); // null 값과 실패한(null 반환) URL 제거
+    return urls.filter(Boolean);
 }
 
-// ✅ 수정: photoUrls에는 이제 GCS 'key' 배열이 저장됩니다.
+// ✅ 공통: 위도/경도 안전하게 만드는 함수
+function normalizeLatLng(data) {
+    const hasPhotos = Array.isArray(data.photoUrls) && data.photoUrls.length > 0;
+
+    // number 이고 NaN 아니면 그대로
+    const isNum = (v) => typeof v === 'number' && !Number.isNaN(v);
+
+    if (hasPhotos) {
+        // ✅ 사진이 있는데 위치가 없으면 무조건 null
+        return {
+            latitude: isNum(data.latitude) ? data.latitude : null,
+            longitude: isNum(data.longitude) ? data.longitude : null,
+        };
+    }
+
+    // ✅ 사진이 없으면 프론트가 보낸 값만 허용 (undefined면 그대로 undefined)
+    return {
+        latitude: isNum(data.latitude) ? data.latitude : data.latitude ?? null,
+        longitude: isNum(data.longitude) ? data.longitude : data.longitude ?? null,
+    };
+}
+
+// ✅ 생성: photoUrls에는 GCS 'key' 배열이 들어온다.
 export async function createTripRecord(userId, data) {
+    const { latitude, longitude } = normalizeLatLng(data);
+
     const doc = await TripRecord.create({
         userId,
         groupId: data.groupId ?? null,
         title: data.title,
         content: data.content ?? '',
         date: data.date,
-        photoUrls: data.photoUrls ?? [], // GCS key 배열
+        photoUrls: data.photoUrls ?? [],
 
-        // ✅ 추가
-        latitude: data.latitude ?? null,
-        longitude: data.longitude ?? null,
+        // ✅ 여기서 확정된 값만 쓴다
+        latitude,
+        longitude,
     });
-    // .toObject()는 Mongoose 문서를 순수 객체로 변환합니다.
-    // (populate된 결과와 일관성을 맞추기 위해 추가)
+
+    // 저장 후 populate해서 반환
     const populatedDoc = await getMyTripRecordById(userId, doc._id);
     return populatedDoc;
 }
 
 export async function getMyTripRecordById(userId, id) {
-    // groupId를 이용해 그룹의 name, color 필드를 함께 가져옵니다.
-    // .lean()을 추가하여 순수 JavaScript 객체를 반환하도록 수정
     const doc = await TripRecord.findOne({ _id: id, userId })
         .populate({ path: 'groupId', select: 'name color' })
-        .lean(); // 👈 lean()으로 순수 객체로 만듭니다.
+        .lean();
 
-    // 🟢 조회 시 key 배열을 임시 URL 배열로 교체
     if (doc && doc.photoUrls) {
-        // 🟢🟢 [핵심 수정] 🟢🟢
-        // 원본 key 목록을 'photoKeys' 필드에 복사
         doc.photoKeys = [...doc.photoUrls];
-        // 'photoUrls' 필드는 임시 URL로 덮어쓰기
         doc.photoUrls = await mapKeysToSignedUrls(doc.photoUrls);
     }
     return doc;
 }
 
-// ✅ 수정: photoUrls에는 GCS 'key' 배열이 저장됩니다.
+// ✅ 수정: photoUrls에는 GCS 'key' 배열이 저장된다.
 export async function updateMyTripRecord(userId, id, data) {
     const doc = await TripRecord.findOne({ _id: id, userId });
     if (!doc) return null;
 
-    // 요청 DTO(data)에 포함된 필드만 선택적으로 업데이트
     if (data.title !== undefined) doc.title = data.title;
     if (data.date !== undefined) doc.date = data.date;
     if (data.groupId !== undefined) doc.groupId = data.groupId ?? null;
     if (data.content !== undefined) doc.content = data.content ?? '';
-    // 🟢 GCS key 배열로 업데이트
-    if (data.photoUrls !== undefined) doc.photoUrls = data.photoUrls ?? [];
 
-    // ✅ 추가: 좌표 필드 업데이트
-    if (data.latitude !== undefined) doc.latitude = data.latitude ?? null;
-    if (data.longitude !== undefined) doc.longitude = data.longitude ?? null;
+    // 사진 key 배열 업데이트
+    if (data.photoUrls !== undefined) {
+        doc.photoUrls = data.photoUrls ?? [];
+    }
+
+    // ✅ 위치 처리: “사진이 있는데 위치가 없으면 null” 강제
+    if (
+        data.latitude !== undefined ||
+        data.longitude !== undefined ||
+        data.photoUrls !== undefined
+    ) {
+        // data 안에 들어있는 최신 값을 기반으로 다시 한 번 정규화
+        const merged = {
+            // 현재 DB 값
+            photoUrls: data.photoUrls !== undefined ? data.photoUrls : doc.photoUrls,
+            latitude: data.latitude !== undefined ? data.latitude : doc.latitude,
+            longitude: data.longitude !== undefined ? data.longitude : doc.longitude,
+        };
+        const { latitude, longitude } = normalizeLatLng(merged);
+        doc.latitude = latitude;
+        doc.longitude = longitude;
+    }
 
     await doc.save();
 
-    // 저장 후 populate된 결과를 반환
     const populatedDoc = await getMyTripRecordById(userId, doc._id);
     return populatedDoc;
 }
@@ -85,23 +117,19 @@ export async function deleteMyTripRecord(userId, id) {
 
 export async function listMyTripRecords(userId, filter, page, limit) {
     const [items, total] = await Promise.all([
-        // .populate()를 추가하여 각 기록의 그룹 정보를 함께 가져옵니다.
-        // .lean()을 추가하여 순수 JavaScript 객체를 반환하도록 수정
         TripRecord.find({ userId, ...filter })
-            .populate({ path: 'groupId', select: 'name color' }) // groupId로 Group의 name, color를 찾습니다.
+            .populate({ path: 'groupId', select: 'name color' })
             .sort({ date: -1 })
             .skip((page - 1) * limit)
             .limit(limit)
             .lean(),
-        TripRecord.countDocuments({ userId, ...filter })
+        TripRecord.countDocuments({ userId, ...filter }),
     ]);
 
-    // 🟢 목록의 모든 item에 대해 URL 변환 적용
     for (const item of items) {
         if (item.photoUrls) {
-            // 🟢🟢 [핵심 수정] 🟢🟢
-            item.photoKeys = [...item.photoUrls]; // 원본 key
-            item.photoUrls = await mapKeysToSignedUrls(item.photoUrls); // 임시 URL
+            item.photoKeys = [...item.photoUrls];
+            item.photoUrls = await mapKeysToSignedUrls(item.photoUrls);
         }
     }
 
